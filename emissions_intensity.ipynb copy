@@ -1,0 +1,227 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "veterinary-skating",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import matplotlib.ticker as ticker"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "green-colon",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# emissions data with fixed country names\n",
+    "data = pd.read_csv('/Users/Violet/Desktop/Founders_Pledge/affectable_emissions_active_repo/Affectable-Emissions/data_files/inputs_w_country_fix/scen_cntry_fix.csv', index_col = 0)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "revolutionary-swimming",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "# extract GDPpp, CO2, and population data from entity column and concat to df, filter for scenarios in Mt only\n",
+    "\n",
+    "# see here for data details, file:///Users/Violet/Downloads/RCP-SSP_dwn_v1.0_data-description.pdf\n",
+    "# From Gütschow et al. 2020\n",
+    "# this filtering results in only using source values for 'SSPIAMBIE', meaning:\n",
+    "# 1) \"SSPIAM\" --> unharmonized downscaled SSP IAM scenarios\n",
+    "# 2) \"B\" --> emissions from bunkers have been removed before downscaling\n",
+    "# 3) \"IE\" --> Convergence downscaling w/ exponential convergence of emissions intensities, and convergence before transition to negative emissions\n",
+    "\n",
+    "population = data[(data['entity'] == 'POP')]\n",
+    "CO2 = data[(data['entity'] == 'CO2')]\n",
+    "CO2 = CO2[CO2['unit'] == 'Mt']\n",
+    "gdp = data[(data['entity'] == 'GDPPPP')]\n",
+    "entity_data = pd.concat([CO2, gdp, population])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "separate-system",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# subset metadata columns\n",
+    "metadata = entity_data[['country.name.en', 'scenario', 'entity', 'unit']]\n",
+    "metadata[entity_data.iloc[:,6:257].columns] = entity_data.iloc[:,6:257]\n",
+    "# sort by region and scenario\n",
+    "sorted_data = metadata.sort_values(['country.name.en','scenario'])\n",
+    "sorted_data = sorted_data.reset_index().drop(columns = 'index')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "minute-trance",
+   "metadata": {},
+   "source": [
+    "## Merged Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "removed-dealing",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "multi_index_data = sorted_data.groupby(by = ['country.name.en','scenario','entity']).mean()\n",
+    "multi_index_data = multi_index_data.reset_index(level=[0,1,2])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "abroad-attention",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "rcps = []\n",
+    "models = []\n",
+    "ssps = []\n",
+    "\n",
+    "for val in multi_index_data['scenario']:\n",
+    "    \n",
+    "    ssps.append(val[:4])\n",
+    "    models.append(val[6:])\n",
+    "    \n",
+    "    if 'BL' in val:\n",
+    "        rcps.append(val[4:6])\n",
+    "    elif 'BL' not in val:\n",
+    "        val_flt = float(val[4:6]) / 10\n",
+    "        rcps.append(val_flt)\n",
+    "        \n",
+    "multi_index_data['SSP'] = ssps\n",
+    "multi_index_data['model'] = models\n",
+    "multi_index_data['RCP'] = rcps"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "hispanic-scope",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Reorder DF columns to put RCP and SSP in front\n",
+    "cols = list(multi_index_data.columns.values) \n",
+    "cols.pop(cols.index('country.name.en')) \n",
+    "cols.pop(cols.index('model'))\n",
+    "cols.pop(cols.index('SSP')) \n",
+    "cols.pop(cols.index('RCP')) \n",
+    "cols.pop(cols.index('entity'))\n",
+    "\n",
+    "#Create new dataframe with columns in the order you want\n",
+    "multi_index_data = multi_index_data[['country.name.en','model','SSP','RCP','entity']+cols] "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "geological-movie",
+   "metadata": {},
+   "source": [
+    "## Yearly sums by region (CO2 and GDP-PPP)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "chinese-annual",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#13 regions * 3 entities * 6 RCPs * 5 SSPs\n",
+    "#yearly CO2 per region\n",
+    "yr_region_CO2 = multi_index_data[multi_index_data['entity'] == 'CO2'].groupby(['country.name.en','SSP','RCP']).mean()\n",
+    "\n",
+    "#yearly GDPppp per region in Million 2011 international dollars\n",
+    "yr_region_gdp = multi_index_data[multi_index_data['entity'] == 'GDPPPP'].groupby(['country.name.en','SSP','RCP']).mean()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "unlike-rebound",
+   "metadata": {},
+   "source": [
+    "## Emissions Intensity"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "blocked-record",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#from https://docs.google.com/document/d/1_wDe3klm9rRNYmeRz_nS4FEjsK6h8t1hQx35HDvaOTM/edit?usp=sharing\n",
+    "#where GHGs over GDP for a given year == afectable emissions in that year\n",
+    "emissions_int = yr_region_CO2/yr_region_gdp\n",
+    "emissions_int.replace([np.inf, -np.inf], np.nan, inplace=True)\n",
+    "emissions_int.fillna(0, inplace = True)\n",
+    "\n",
+    "#sum affectable emissions over the entire period for each region\n",
+    "emissions_int['total'] = emissions_int.sum(axis = 1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "meaning-vintage",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# this is the time series of CO2 emissions in MT for every country in the data\n",
+    "CO2_emit = yr_region_CO2.reset_index(level=[0,1,2])\n",
+    "CO2_emit.to_csv('~/Desktop/Founders_Pledge/affectable_emissions_active_repo/Affectable-Emissions/data_files/planned_CO2-country_scenario.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "hired-actress",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#flatten multindex axis\n",
+    "emit_int = emissions_int.reset_index(level=[0,1,2])\n",
+    "# this is the time series of emissions intensity (MT/ Million2011GKD) for every country in the data\n",
+    "emit_int.to_csv('~/Desktop/Founders_Pledge/affectable_emissions_active_repo/Affectable-Emissions/data_files/emissions_intensity_country_level.csv')"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.2"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
